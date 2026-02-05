@@ -1,0 +1,342 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  COACH
+  ADMIN
+}
+
+enum QuestionType {
+  MCQ
+  SJT
+  NUMERICAL
+  FREE_TEXT
+  TECHNICAL
+}
+
+enum TestType {
+  CSJT
+  SJT
+  NUMERICAL
+  TECHNICAL
+  MIXED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  UNPAID
+}
+
+enum TestAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+}
+
+model User {
+  id                 String               @id @default(uuid())
+  name               String
+  email              String               @unique
+  role               UserRole             @default(USER)
+  targetGradeId      String?
+  subscriptionStatus SubscriptionStatus   @default(INCOMPLETE)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  version            Int                  @default(1)
+
+  targetGrade        RoleGrade?           @relation(fields: [targetGradeId], references: [id])
+  testAttempts       TestAttempt[]
+  interviews         InterviewMock[]
+  subscriptions      Subscription[]
+  statements         ApplicationStatement[]
+  consents           ConsentRecord[]
+  auditLogs          AuditLog[]           @relation("AuditActor")
+
+  @@index([deletedAt])
+  @@index([role])
+}
+
+model RoleGrade {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+  version     Int          @default(1)
+
+  behaviours  Behaviour[]
+  questions   Question[]
+  tests       Test[]
+  interviews  InterviewMock[]
+
+  @@index([deletedAt])
+}
+
+model Behaviour {
+  id              String               @id @default(uuid())
+  name            String
+  description     String
+  successCriteria String
+  gradeId         String
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+  version         Int                  @default(1)
+
+  grade           RoleGrade            @relation(fields: [gradeId], references: [id])
+  examples        BehaviourExample[]
+  questionLinks   QuestionBehaviour[]
+  scorecards      InterviewScorecard[]
+
+  @@index([gradeId])
+  @@index([deletedAt])
+}
+
+model BehaviourExample {
+  id            String    @id @default(uuid())
+  behaviourId   String
+  starSituation String
+  starTask      String
+  starAction    String
+  starResult    String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  version       Int       @default(1)
+
+  behaviour     Behaviour @relation(fields: [behaviourId], references: [id])
+
+  @@index([behaviourId])
+  @@index([deletedAt])
+}
+
+model Question {
+  id             String               @id @default(uuid())
+  prompt         String
+  type           QuestionType
+  difficulty     Int
+  gradeId        String
+  correctAnswer  String?
+  rationale      String?
+  metadata       Json?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  version        Int                  @default(1)
+
+  grade          RoleGrade            @relation(fields: [gradeId], references: [id])
+  behaviourLinks QuestionBehaviour[]
+  answers        Answer[]
+  testLinks      TestQuestion[]
+
+  @@index([gradeId])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+model QuestionBehaviour {
+  questionId  String
+  behaviourId String
+
+  question    Question  @relation(fields: [questionId], references: [id])
+  behaviour   Behaviour @relation(fields: [behaviourId], references: [id])
+
+  @@id([questionId, behaviourId])
+  @@index([behaviourId])
+}
+
+model Test {
+  id         String       @id @default(uuid())
+  name       String
+  type       TestType
+  timeLimit  Int
+  gradeId    String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  deletedAt  DateTime?
+  version    Int          @default(1)
+
+  grade      RoleGrade    @relation(fields: [gradeId], references: [id])
+  attempts   TestAttempt[]
+  questions  TestQuestion[]
+
+  @@index([gradeId])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+model TestQuestion {
+  testId     String
+  questionId String
+  order      Int?
+
+  test       Test     @relation(fields: [testId], references: [id])
+  question   Question @relation(fields: [questionId], references: [id])
+
+  @@id([testId, questionId])
+  @@index([questionId])
+}
+
+model TestAttempt {
+  id          String     @id @default(uuid())
+  userId      String
+  testId      String
+  score       Int?
+  startedAt   DateTime   @default(now())
+  completedAt DateTime?
+  status      TestAttemptStatus @default(IN_PROGRESS)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  version     Int        @default(1)
+
+  user        User       @relation(fields: [userId], references: [id])
+  test        Test       @relation(fields: [testId], references: [id])
+  answers     Answer[]
+
+  @@index([userId])
+  @@index([testId])
+  @@index([completedAt])
+  @@index([deletedAt])
+}
+
+model Answer {
+  id         String      @id @default(uuid())
+  attemptId  String
+  questionId String
+  order      Int
+  response   Json
+  score      Int?
+  awardedScore Float?
+  maxScore   Float?
+  behaviourContributions Json?
+  rubricBreakdown Json?
+  manualOverride Boolean @default(false)
+  manualScore Float?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  deletedAt  DateTime?
+  version    Int         @default(1)
+
+  attempt    TestAttempt @relation(fields: [attemptId], references: [id])
+  question   Question    @relation(fields: [questionId], references: [id])
+
+  @@index([attemptId])
+  @@index([attemptId, order])
+  @@index([questionId])
+  @@index([deletedAt])
+  @@unique([attemptId, questionId])
+}
+
+model InterviewMock {
+  id        String              @id @default(uuid())
+  userId    String
+  gradeId   String
+  videoUrl  String
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  deletedAt DateTime?
+  version   Int                 @default(1)
+
+  user      User                @relation(fields: [userId], references: [id])
+  grade     RoleGrade           @relation(fields: [gradeId], references: [id])
+  scorecard InterviewScorecard[]
+
+  @@index([userId])
+  @@index([gradeId])
+  @@index([deletedAt])
+}
+
+model InterviewScorecard {
+  id          String        @id @default(uuid())
+  interviewId String
+  behaviourId String
+  score       Int
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  version     Int           @default(1)
+
+  interview   InterviewMock @relation(fields: [interviewId], references: [id])
+  behaviour   Behaviour     @relation(fields: [behaviourId], references: [id])
+
+  @@index([interviewId])
+  @@index([behaviourId])
+  @@index([deletedAt])
+}
+
+model Subscription {
+  id                   String              @id @default(uuid())
+  userId               String
+  stripeSubscriptionId String
+  status               SubscriptionStatus
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  deletedAt            DateTime?
+  version              Int                 @default(1)
+
+  user                 User                @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model ApplicationStatement {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  content   String
+  analysis  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  version   Int      @default(1)
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model ConsentRecord {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  grantedAt DateTime @default(now())
+  revokedAt DateTime?
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+}
