@@ -20,6 +20,92 @@ export class TestsService {
     return { items };
   }
 
+  async listAttempts(
+    userId?: string,
+    status?: 'IN_PROGRESS' | 'SUBMITTED' | 'EXPIRED',
+    page = 1,
+    pageSize = 20,
+  ) {
+    if (!userId) {
+      return { items: [], page, pageSize, total: 0 };
+    }
+
+    const where = {
+      userId,
+      deletedAt: null,
+      ...(status ? { status } : {}),
+    } as const;
+
+    const total = await this.prisma.testAttempt.count({ where });
+
+    const items = await this.prisma.testAttempt.findMany({
+      where,
+      include: { test: { include: { grade: true } } },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    const now = Date.now();
+    const updates: Promise<unknown>[] = [];
+
+    const mapped = items.map((attempt) => {
+      const expiresAtMs = attempt.startedAt.getTime() + attempt.test.timeLimit * 60 * 1000;
+      const isExpired = attempt.status === 'IN_PROGRESS' && now > expiresAtMs;
+      if (isExpired) {
+        updates.push(
+          this.prisma.testAttempt.update({
+            where: { id: attempt.id },
+            data: { status: 'EXPIRED', completedAt: new Date() },
+          }),
+        );
+      }
+
+      return {
+        id: attempt.id,
+        testId: attempt.testId,
+        testName: attempt.test.name,
+        grade: attempt.test.grade?.name,
+        status: isExpired ? 'EXPIRED' : attempt.status,
+        startedAt: attempt.startedAt.toISOString(),
+        completedAt: attempt.completedAt?.toISOString(),
+        timeLimit: attempt.test.timeLimit,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+        isExpired,
+      };
+    });
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+    }
+
+    return { items: mapped, page, pageSize, total };
+  }
+
+  async getTestMetadata(testId: string) {
+    const test = await this.testsRepository.findWithQuestionsAndBehaviours(testId);
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    return {
+      id: test.id,
+      name: test.name,
+      timeLimit: test.timeLimit,
+      grade: test.grade?.name,
+      questions: test.questions.map((link) => {
+        const metadata = (link.question.metadata ?? {}) as Record<string, unknown>;
+        const options = Array.isArray(metadata.options) ? metadata.options : undefined;
+        return {
+          id: link.question.id,
+          prompt: link.question.prompt,
+          type: link.question.type,
+          options,
+        };
+      }),
+    };
+  }
+
   async start(testId: string, userId: string) {
     const test = await this.testsRepository.findWithQuestionsAndBehaviours(testId);
     if (!test) {

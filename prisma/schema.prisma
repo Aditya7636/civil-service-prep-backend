@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
@@ -47,6 +48,7 @@ model User {
   id                 String             @id @default(uuid())
   name               String
   email              String             @unique
+  passwordHash       String
   role               UserRole           @default(USER)
   targetGradeId      String?
   subscriptionStatus SubscriptionStatus @default(INCOMPLETE)
@@ -55,7 +57,7 @@ model User {
   deletedAt          DateTime?
   version            Int                @default(1)
 
-  targetGrade   RoleGrade?             @relation(fields: [targetGradeId], references: [id])
+  targetGrade   RoleGrade?             @relation("UserTargetGrade", fields: [targetGradeId], references: [id])
   testAttempts  TestAttempt[]
   interviews    InterviewMock[]
   subscriptions Subscription[]
@@ -81,7 +83,7 @@ model RoleGrade {
   tests      Test[]
   interviews InterviewMock[]
 
-  users User[] // ✅ ADD THIS LINE
+  users User[] @relation("UserTargetGrade")
 
   @@index([deletedAt])
 }
@@ -165,6 +167,7 @@ model Test {
   type      TestType
   timeLimit Int
   gradeId   String
+  isPublished Boolean @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -212,6 +215,7 @@ model TestAttempt {
   @@index([testId])
   @@index([completedAt])
   @@index([deletedAt])
+  @@index([status])
 }
 
 model Answer {
