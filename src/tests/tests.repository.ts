@@ -8,7 +8,7 @@ export class TestsRepository {
 
   findMany(): Promise<Test[]> {
     return this.prisma.test.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, isPublished: true },
       include: { grade: true },
       orderBy: { name: 'asc' },
     });
@@ -23,7 +23,7 @@ export class TestsRepository {
 
   findWithQuestionsAndBehaviours(id: string) {
     return this.prisma.test.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, isPublished: true },
       include: {
         grade: true,
         questions: {

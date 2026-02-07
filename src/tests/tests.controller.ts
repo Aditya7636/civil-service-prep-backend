@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { TestsService } from './tests.service';
 import { AttemptResultsQueryDto } from './dto/attempt-results-query.dto';
+import { ListAttemptsQueryDto } from './dto/list-attempts.dto';
 import { StartTestDto } from './dto/start-test.dto';
 import { SubmitTestDto } from './dto/submit-test.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @Controller('tests')
 export class TestsController {
@@ -11,6 +13,27 @@ export class TestsController {
   @Get()
   list() {
     return this.testsService.list();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('attempts')
+  listAttempts(
+    @Query() query: ListAttemptsQueryDto,
+    @Req() req: { user?: { id?: string; role?: string } },
+  ) {
+    const isAdmin = req.user?.role === 'ADMIN';
+    const userId = isAdmin ? query.userId ?? req.user?.id : req.user?.id;
+    return this.testsService.listAttempts(
+      userId,
+      query.status,
+      query.page ?? 1,
+      query.pageSize ?? 20,
+    );
+  }
+
+  @Get(':id')
+  getById(@Param('id') id: string) {
+    return this.testsService.getTestMetadata(id);
   }
 
   @Post(':id/start')
